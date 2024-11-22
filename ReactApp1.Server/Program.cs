@@ -1,64 +1,65 @@
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using ReactApp1.Server.Services;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using ReactApp1.Server.Auth.Model;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using System.IdentityModel.Tokens.Jwt;
+using ReactApp1.Server.Auth;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;//???
+
+JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-//builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
-//!builder.Services.AddScoped(provider => new AppDbContext(connectionString));
-//!builder.Services.AddScoped<DormService>();
+
 builder.Services.AddScoped(provider => new DormService(connectionString));
 builder.Services.AddScoped(provider => new ResidentService(connectionString));
 builder.Services.AddScoped(provider => new PostService(connectionString));
-/*
-// Add services to the container.
+builder.Services.AddTransient<JwtTokenService>();
+builder.Services.AddScoped<AuthDbSeeder>();
 
-builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-*/
+builder.Services.AddDbContext<AppDbContext>(options =>
+	options.UseMySql(
+		builder.Configuration.GetConnectionString("DefaultConnection"),
+		new MySqlServerVersion(new Version(8, 0, 33)) // Adjust based on your MySQL version
+	));
+builder.Services.AddIdentity<ForumRestUser, IdentityRole>()
+	.AddEntityFrameworkStores<AppDbContext>()
+	.AddDefaultTokenProviders();
 
-
-//builder.Services.AddDbContext<>(forumDbContext)
-
-
+builder.Services.AddAuthentication(options =>
+{
+	options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+	options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+	options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+}).AddJwtBearer(options =>
+{
+	options.TokenValidationParameters.ValidAudience=builder.Configuration["Jwt:ValidAudience"];
+	options.TokenValidationParameters.ValidIssuer=builder.Configuration["Jwt:ValidIssuer"];
+	options.TokenValidationParameters.IssuerSigningKey= new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"]));
+	//options.TokenValidationParameters.RoleClaimType = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
+});
+builder.Services.AddAuthorization();
 var app = builder.Build();
+
+
 
 using (var scope = app.Services.CreateScope())
 {
-	/*var services = scope.ServiceProvider;
-	var context = services.GetRequiredService<AppDbContext>();
-	//context.Database.Migrate();
-	var dormService = services.GetRequiredService<DormService>();
-	dormService.PrintDorms();*/
 	var dormService = scope.ServiceProvider.GetRequiredService<DormService>();
 	var residentService = scope.ServiceProvider.GetRequiredService<ResidentService>();
 	var postService = scope.ServiceProvider.GetRequiredService<PostService>();
+	var dbSeeder = scope.ServiceProvider.GetRequiredService<AuthDbSeeder>();
+	await dbSeeder.SeedAsync();
 	dormService.PrintDorms();
 }
 
-/*
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-	app.UseSwagger();
-	app.UseSwaggerUI();
-}
-
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
-
-app.MapControllers();
-
-app.MapFallbackToFile("/index.html");
-*/
-//
 
 
 
@@ -77,7 +78,7 @@ dorms.MapGet("/dorms/{dormId}", (int dormId, DormService dormService) => {
 	var dorm = dormService.GetDormById(dormId);
 	return dorm != null ? Results.Ok(dorm) : Results.NotFound();//200 or 404
 });
-dorms.MapPost("/dorms", (CreateDormDto dto, DormService dormService) => {
+dorms.MapPost("/dorms", [Authorize(Roles = ForumRoles.Admin)] (CreateDormDto dto, DormService dormService) => {
 	if (string.IsNullOrWhiteSpace(dto.Name))
 	{
 		return Results.BadRequest("Dorm name is required.");//400
@@ -89,7 +90,7 @@ dorms.MapPost("/dorms", (CreateDormDto dto, DormService dormService) => {
 	var newDorm = dormService.CreateDorm(dto);
 	return Results.Created($"/dorms/{newDorm.Id}", newDorm);//201
 });
-dorms.MapPut("/dorms/{dormId}", (UpdateDormDto dto, DormService dormService, int dormId) =>
+dorms.MapPut("/dorms/{dormId}", [Authorize(Roles = ForumRoles.Admin)] (UpdateDormDto dto, DormService dormService, int dormId) =>
 {
 	if (string.IsNullOrWhiteSpace(dto.Name))
 	{
@@ -107,7 +108,7 @@ dorms.MapPut("/dorms/{dormId}", (UpdateDormDto dto, DormService dormService, int
 	dormService.UpdateDorm(dto, dormId);
 	return Results.Ok();//200
 });
-dorms.MapDelete("/dorms/{dormId}", (int dormId, DormService dormService, ResidentService residentService) =>
+dorms.MapDelete("/dorms/{dormId}", [Authorize(Roles = ForumRoles.Admin)] (int dormId, DormService dormService, ResidentService residentService) =>
 {
 	if (residentService.GetResidents(dormId).Count > 0)
 	{
@@ -143,7 +144,7 @@ dorms.MapGet("/dorms/{dormId}/residents/{residentsId}", (int dormId, int residen
 	var resident = residentService.GetResidentsById(dormId, residentsId);
 	return resident != null ? Results.Ok(resident) : Results.NotFound();//200 or 404
 });
-dorms.MapPost("/dorms/{dormId}/residents", (CreateResidentDto dto, int dormId, ResidentService residentService, DormService dormService) => {
+dorms.MapPost("/dorms/{dormId}/residents", [Authorize(Roles = ForumRoles.Admin)] (CreateResidentDto dto, int dormId, ResidentService residentService, DormService dormService) => {
 	if (dormService.GetDormById(dormId) == null)
 	{
 		return Results.NotFound($"Dorm with id {dormId} does not exist");//404
@@ -159,7 +160,7 @@ dorms.MapPost("/dorms/{dormId}/residents", (CreateResidentDto dto, int dormId, R
 	var newDorm= residentService.CreateResidents(dto, dormId);
 	return Results.Created($"/dorms/{dormId}/residents/{newDorm.Id}", newDorm);//201
 });
-dorms.MapPut("/dorms/{dormId}/residents/{residentsId}", (UpdateResidentDto dto, ResidentService residentService, int dormId, int residentsId) =>
+dorms.MapPut("/dorms/{dormId}/residents/{residentsId}", [Authorize(Roles = ForumRoles.Admin)] (UpdateResidentDto dto, ResidentService residentService, int dormId, int residentsId) =>
 {
 	if (string.IsNullOrWhiteSpace(dto.Firstname) || string.IsNullOrWhiteSpace(dto.Lastname) || dto.RoomNumber <= 0)
 	{
@@ -177,7 +178,7 @@ dorms.MapPut("/dorms/{dormId}/residents/{residentsId}", (UpdateResidentDto dto, 
 	residentService.UpdateResidents(dto, dormId, residentsId);
 	return Results.Ok();//200
 });
-dorms.MapDelete("/dorms/{dormId}/residents/{residentsId}", (int dormId, int residentsId, ResidentService residentService) =>
+dorms.MapDelete("/dorms/{dormId}/residents/{residentsId}", [Authorize(Roles = ForumRoles.Admin)] (int dormId, int residentsId, ResidentService residentService) =>
 {
 	if (residentService.GetResidentsById(dormId, residentsId) == null)
 	{
@@ -211,7 +212,11 @@ dorms.MapGet("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", (int dorm
 	var resident = postService.GetPostById(dormId, residentsId, postId);
 	return resident != null ? Results.Ok(resident) : Results.NotFound();//200 or 204
 });
-dorms.MapPost("/dorms/{dormId}/residents/{residentsId}/posts", (CreatePostDto dto, int dormId, int residentsId, PostService postService, DormService dormService, ResidentService residentService) => {
+dorms.MapPost("/dorms/{dormId}/residents/{residentsId}/posts", [Authorize(Roles = ForumRoles.ForumUser)] (CreatePostDto dto, int dormId, int residentsId, PostService postService, DormService dormService, ResidentService residentService, HttpContext httpContext) => {
+	if (httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) != residentService.FindUserIdOfResident(residentsId))
+	{
+		return Results.Unauthorized();
+	}
 	if (dormService.GetDormById(dormId) == null)
 	{
 		return Results.NotFound($"Dorm with id {dormId} does not exist");//404
@@ -232,8 +237,12 @@ dorms.MapPost("/dorms/{dormId}/residents/{residentsId}/posts", (CreatePostDto dt
 	var newDorm = postService.CreatePost(dto, dormId, residentsId);
 	return Results.Created($"/dorms/{dormId}/residents/{residentsId}/posts/{newDorm.Id}", newDorm);//201
 });
-dorms.MapPut("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", (UpdatePostDto dto, PostService postService, int dormId, int residentsId, int postId) =>
+dorms.MapPut("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", [Authorize(Roles = ForumRoles.ForumUser)] (UpdatePostDto dto, PostService postService, ResidentService residentService, int dormId, int residentsId, int postId, HttpContext httpContext) =>
 {
+	if (httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) != residentService.FindUserIdOfResident(residentsId))
+	{
+		return Results.Unauthorized();
+	}
 	if (string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Text))
 	{
 		return Results.BadRequest("BadRequest");//400
@@ -250,8 +259,12 @@ dorms.MapPut("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", (UpdatePo
 	postService.UpdatePost(dto, dormId, residentsId, postId);
 	return Results.Ok();//200
 });
-dorms.MapDelete("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", (int dormId, int residentsId, int postId, PostService postService) =>
+dorms.MapDelete("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", [Authorize(Roles = ForumRoles.ForumUser)] (int dormId, int residentsId, int postId, PostService postService, HttpContext httpContext, ResidentService residentService) =>
 {
+	if ((httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) != residentService.FindUserIdOfResident(residentsId)) && !httpContext.User.IsInRole(ForumRoles.Admin))
+	{
+		return Results.Unauthorized();
+	}
 	if (postService.GetPostById(dormId, residentsId, postId) == null)
 	{
 		return Results.NotFound($"Post with ID {postId} of resident with ID {residentsId} not found in dorm with ID {dormId} not found.");//404
@@ -263,6 +276,16 @@ dorms.MapDelete("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", (int d
 	}
 });
 //
+
+app.AddAuthApi();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+//using var scope = app.Services.CreateScope();
+//var dbSeeder = scope.ServiceProvider.GetRequiredService<AuthDbSeeder>();
+
+
 app.Run();
 //
 //
@@ -279,3 +302,6 @@ public record UpdateResidentDto(string Firstname, string Lastname, int RoomNumbe
 public record PostDto(string Title, string Text, int PosterId, int DormId, int Id, DateTime posted_timestamp);
 public record CreatePostDto(string Title, string Text);
 public record UpdatePostDto(string Title, string Text);
+
+
+

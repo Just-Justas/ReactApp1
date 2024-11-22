@@ -1,4 +1,5 @@
 ﻿using MySql.Data.MySqlClient;
+using ReactApp1.Server.Entities;
 
 namespace ReactApp1.Server.Services
 {
@@ -129,7 +130,36 @@ namespace ReactApp1.Server.Services
 
 			command.ExecuteNonQuery();
 		}
+		public void SetUserIdOfResident(int residentId, string userId)
+		{
+			using var connection = new MySqlConnection(_connectionString);
+			connection.Open();
 
+			string query = "UPDATE Residents SET UserId = @UserId WHERE Id = @Id";
+			using var command = new MySqlCommand(query, connection);
+			command.Parameters.AddWithValue("@UserId", userId);
+			command.Parameters.AddWithValue("@Id", residentId);
+
+			command.ExecuteNonQuery();
+		}
+		public string FindUserIdOfResident(int id)
+		{
+			using var connection = new MySqlConnection(_connectionString);
+			connection.Open();
+
+			string query = "SELECT UserId FROM Residents WHERE Id = @Id";
+			using var command = new MySqlCommand(query, connection);
+			command.Parameters.AddWithValue("@Id", id);
+
+			using var reader = command.ExecuteReader();
+
+			if (reader.Read())
+			{
+				return reader.GetString("UserId");
+			}
+
+			return null;
+		}
 		public void DeleteResidents(int dormId,int resId)
 		{
 			DeletePostsOfResident(dormId, resId);

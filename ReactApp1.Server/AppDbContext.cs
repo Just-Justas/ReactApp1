@@ -1,24 +1,32 @@
-﻿using System.Data.Entity;
-using System.Data.Entity.ModelConfiguration;
+﻿using System.Data.Entity.ModelConfiguration;
 using System.Data.Entity.Migrations;
 using ReactApp1.Server.Entities;
-public class AppDbContext : DbContext
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using ReactApp1.Server.Auth.Model;
+public class AppDbContext : IdentityDbContext<ForumRestUser>
 {
-	public AppDbContext(string connectionString) : base(connectionString)
+	public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
 	{
-		Database.SetInitializer(new MigrateDatabaseToLatestVersion<AppDbContext, Configuration>());
 	}
-	public AppDbContext() : base()
-	{
-		Database.SetInitializer(new MigrateDatabaseToLatestVersion<AppDbContext, Configuration>());
-	}
-	public DbSet<Dorm> Dorms { get; set; }
-}
 
-internal sealed class Configuration : DbMigrationsConfiguration<AppDbContext>
-{
-	public Configuration()
+	//public DbSet<Dorm> Dorms { get; set; }
+	//public DbSet<Resident> Residents { get; set; }
+	//public DbSet<Post> Posts { get; set; }
+
+	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
-		AutomaticMigrationsEnabled = true;
+		base.OnModelCreating(modelBuilder);
+		// Configure entity relationships or constraints if needed
 	}
+
+	/*
+	internal sealed class Configuration : DbMigrationsConfiguration<AppDbContext>
+	{
+		public Configuration()
+		{
+			AutomaticMigrationsEnabled = true;
+		}
+	}*/
 }
