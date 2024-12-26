@@ -38,7 +38,33 @@ namespace ReactApp1.Server.Services
 
 			return dorms;
 		}
+		public List<PostDto> GetPosts(int DormId)
+		{
+			var dorms = new List<PostDto>();
 
+			using var connection = new MySqlConnection(_connectionString);
+			connection.Open();
+
+			string query = "SELECT Title, Text, PosterID, DormId, ID, posted_timestamp FROM post WHERE dormId = @dormId;";
+			using var command = new MySqlCommand(query, connection);
+			command.Parameters.AddWithValue("@dormId", DormId);
+			using var reader = command.ExecuteReader();
+
+			while (reader.Read())
+			{
+				var dorm = new PostDto(
+					reader.GetString("Title"),
+					reader.GetString("Text"),
+					reader.GetInt32("PosterID"),
+					reader.GetInt32("DormId"),
+					reader.GetInt32("ID"),
+					reader.GetDateTime("posted_timestamp")
+				);
+				dorms.Add(dorm);
+			}
+
+			return dorms;
+		}
 		public PostDto GetPostById(int dormId, int posterId, int id)
 		{
 			using var connection = new MySqlConnection(_connectionString);
@@ -113,7 +139,17 @@ namespace ReactApp1.Server.Services
 
 			command.ExecuteNonQuery();
 		}
+		public void DeletePost(int Id)
+		{
+			using var connection = new MySqlConnection(_connectionString);
+			connection.Open();
 
+			string query = "DELETE FROM post WHERE Id = @Id";
+			using var command = new MySqlCommand(query, connection);
+			command.Parameters.AddWithValue("@Id", Id);
+
+			command.ExecuteNonQuery();
+		}
 
 	}
 }

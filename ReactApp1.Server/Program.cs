@@ -65,6 +65,20 @@ using (var scope = app.Services.CreateScope())
 
 
 var dorms = app.MapGroup("/api");
+
+dorms.MapGet("/role", (ResidentService residentService, HttpContext httpContext) => {
+	var userRole = httpContext.User?.FindFirstValue(ClaimTypes.Role);
+	if (string.IsNullOrEmpty(userRole))
+	{
+		return Results.Ok(0); // Not logged in
+	}
+	if (httpContext.User.IsInRole(ForumRoles.Admin))
+	{
+		return Results.Ok(2); // Admin
+	}
+	return Results.Ok(1); // User
+});
+
 dorms.MapGet("/dorms", (DormService dormService) => {
 	var dormsList = dormService.GetDorms();
 	if (dormsList.Count == 0)
@@ -74,10 +88,17 @@ dorms.MapGet("/dorms", (DormService dormService) => {
 	else
 		return Results.Ok(dormsList);//200
 });
-dorms.MapGet("/dorms/{dormId}", (int dormId, DormService dormService) => {
+
+dorms.MapGet("/dorms/{dormId}/posts", (int dormId, DormService dormService, PostService postService) => {
 	var dorm = dormService.GetDormById(dormId);
-	return dorm != null ? Results.Ok(dorm) : Results.NotFound();//200 or 404
+	if(dorm == null)
+	{
+		return Results.NotFound($"Dorm with ID {dormId} not found.");//404
+	}
+	var posts = postService.GetPosts(dormId);
+	return Results.Ok(posts);//200
 });
+
 dorms.MapPost("/dorms", [Authorize(Roles = ForumRoles.Admin)] (CreateDormDto dto, DormService dormService) => {
 	if (string.IsNullOrWhiteSpace(dto.Name))
 	{
@@ -274,6 +295,16 @@ dorms.MapDelete("/dorms/{dormId}/residents/{residentsId}/posts/{postId}", [Autho
 		postService.DeletePost(dormId, residentsId, postId);
 		return Results.Ok();//200
 	}
+});
+
+dorms.MapDelete("/dorms/{dormId}/posts/{postId}", [Authorize(Roles = ForumRoles.ForumUser)] (int postId, PostService postService, HttpContext httpContext) =>
+{
+	if (!httpContext.User.IsInRole(ForumRoles.Admin))
+	{
+		return Results.Unauthorized();
+	}
+		postService.DeletePost(postId);
+		return Results.Ok();//200
 });
 //
 
